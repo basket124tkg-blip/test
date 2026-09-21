@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BLOCK DROP</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+        margin: 0;
+        min-height: 100vh;
+        background: #111;
+        color: white;
+        font-family: system-ui, sans-serif;
+        display: flex;
+        justify-content: center;
+        overscroll-behavior: none;
+    }
+
+    .game {
+        width: min(100%, 430px);
+        padding: 12px 16px 24px;
+        text-align: center;
+    }
+
+    h1 {
+        margin: 4px 0 8px;
+        font-size: 24px;
+        letter-spacing: 4px;
+    }
+
+    .info {
+        display: flex;
+        justify-content: space-between;
+        margin: 0 auto 8px;
+        max-width: 300px;
+        font-weight: bold;
+    }
+
+    canvas {
+        display: block;
+        margin: auto;
+        background: #050505;
+        border: 2px solid #555;
+        max-height: 60vh;
+        max-width: 90vw;
+    }
+
+    .controls {
+        margin: 14px auto 0;
+        max-width: 330px;
+    }
+
+    .row {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    button {
+        width: 68px;
+        height: 54px;
+        border: 0;
+        border-radius: 12px;
+        background: #333;
+        color: white;
+        font-size: 25px;
+        font-weight: bold;
+        touch-action: manipulation;
+    }
+
+    button:active {
+        transform: scale(0.94);
+        background: #555;
+    }
+
+    .wide {
+        width: 146px;
+        font-size: 16px;
+    }
+
+    #message {
+        height: 24px;
+        margin: 6px;
+        font-weight: bold;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="game">
+
+<h1>BLOCK DROP</h1>
+
+<div class="info">
+    <span>SCORE: <span id="score">0</span></span>
+    <span>LINES: <span id="lines">0</span></span>
+</div>
+
+<canvas id="board" width="300" height="600"></canvas>
+
+<div id="message"></div>
+
+<div class="controls">
+
+    <div class="row">
+        <button id="rotate">↻</button>
+    </div>
+
+    <div class="row">
+        <button id="left">←</button>
+        <button id="down">↓</button>
+        <button id="right">→</button>
+    </div>
+
+    <div class="row">
+        <button id="drop" class="wide">HARD DROP</button>
+        <button id="restart" class="wide">RESTART</button>
+    </div>
+
+</div>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+
+const COLS = 10;
+const ROWS = 20;
+const BLOCK = 30;
+
+const COLORS = [
+    null,
+    "#00e5ff",
+    "#ffd600",
+    "#aa00ff",
+    "#00e676",
+    "#ff1744",
+    "#2979ff",
+    "#ff9100"
+];
+
+const SHAPES = [
+    [[1,1,1,1]],
+    [[2,2],[2,2]],
+    [[0,3,0],[3,3,3]],
+    [[0,4,4],[4,4,0]],
+    [[5,5,0],[0,5,5]],
+    [[6,0,0],[6,6,6]],
+    [[0,0,7],[7,7,7]]
+];
+
+let board;
+let piece;
+let score;
+let lines;
+let gameOver;
+let lastTime = 0;
+let dropCounter = 0;
+let dropInterval = 700;
+
+function createBoard() {
+    return Array.from(
+        {length: ROWS},
+        () => Array(COLS).fill(0)
+    );
+}
+
+function newPiece() {
+
+    const index = Math.floor(Math.random() * SHAPES.length);
+
+    piece = {
+        matrix: SHAPES[index].map(row => [...row]),
+        x: 0,
+        y: 0
+    };
+
+    piece.x =
+        Math.floor(COLS / 2) -
+        Math.ceil(piece.matrix[0].length / 2);
+
+    if (collide()) {
+        gameOver = true;
+        document.getElementById("message").textContent = "GAME OVER";
+    }
+}
+
+function collide() {
+
+    for (let y = 0; y < piece.matrix.length; y++) {
+
+        for (let x = 0; x < piece.matrix[y].length; x++) {
+
+            if (
+                piece.matrix[y][x] !== 0 &&
+                (
+                    board[y + piece.y]?.[x + piece.x] === undefined ||
+                    board[y + piece.y][x + piece.x] !== 0
+                )
+            ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function merge() {
+
+    piece.matrix.forEach((row, y) => {
+
+        row.forEach((value, x) => {
+
+            if (value !== 0) {
+                board[y + piece.y][x + piece.x] = value;
+            }
+
+        });
+
+    });
+}
+
+function clearLines() {
+
+    let cleared = 0;
+
+    outer:
+    for (let y = ROWS - 1; y >= 0; y--) {
+
+        for (let x = 0; x < COLS; x++) {
+
+            if (board[y][x] === 0) {
+                continue outer;
+            }
+
+        }
+
+        board.splice(y, 1);
+        board.unshift(Array(COLS).fill(0));
+
+        y++;
+        cleared++;
+    }
+
+    if (cleared > 0) {
+
+        const points = [0, 100, 300, 500, 800];
+
+        score += points[cleared] || cleared * 200;
+        lines += cleared;
+
+        dropInterval = Math.max(
+            150,
+            700 - Math.floor(lines / 10) * 70
+        );
+
+        updateInfo();
+    }
+}
+
+function drop() {
+
+    if (gameOver) return;
+
+    piece.y++;
+
+    if (collide()) {
+
+        piece.y--;
+
+        merge();
+        clearLines();
+        newPiece();
+    }
+
+    dropCounter = 0;
+}
+
+function hardDrop() {
+
+    if (gameOver) return;
+
+    while (!collide()) {
+        piece.y++;
+    }
+
+    piece.y--;
+
+    merge();
+    clearLines();
+    newPiece();
+
+    dropCounter = 0;
+}
+
+function move(dir) {
+
+    if (gameOver) return;
+
+    piece.x += dir;
+
+    if (collide()) {
+        piece.x -= dir;
+    }
+}
+
+function rotate() {
+
+    if (gameOver) return;
+
+    const old = piece.matrix;
+
+    piece.matrix =
+        piece.matrix[0].map(
+            (_, i) =>
+                piece.matrix.map(row => row[i]).reverse()
+        );
+
+    let offset = 1;
+
+    while (collide()) {
+
+        piece.x += offset;
+
+        offset = -(offset + (offset > 0 ? 1 : -1));
+
+        if (Math.abs(offset) > piece.matrix[0].length) {
+
+            piece.matrix = old;
+            return;
+        }
+    }
+}
+
+function drawBlock(x, y, value) {
+
+    ctx.fillStyle = COLORS[value];
+
+    ctx.fillRect(
+        x * BLOCK,
+        y * BLOCK,
+        BLOCK,
+        BLOCK
+    );
+
+    ctx.strokeStyle = "#111";
+
+    ctx.strokeRect(
+        x * BLOCK,
+        y * BLOCK,
+        BLOCK,
+        BLOCK
+    );
+}
+
+function draw() {
+
+    ctx.fillStyle = "#050505";
+
+    ctx.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    board.forEach((row, y) => {
+
+        row.forEach((value, x) => {
+
+            if (value !== 0) {
+                drawBlock(x, y, value);
+            }
+
+        });
+
+    });
+
+    if (!gameOver) {
+
+        piece.matrix.forEach((row, y) => {
+
+            row.forEach((value, x) => {
+
+                if (value !== 0) {
+                    drawBlock(
+                        x + piece.x,
+                        y + piece.y,
+                        value
+                    );
+                }
+
+            });
+
+        });
+    }
+}
+
+function updateInfo() {
+
+    document.getElementById("score").textContent = score;
+    document.getElementById("lines").textContent = lines;
+}
+
+function restart() {
+
+    board = createBoard();
+
+    score = 0;
+    lines = 0;
+    gameOver = false;
+
+    dropInterval = 700;
+
+    document.getElementById("message").textContent = "";
+
+    updateInfo();
+    newPiece();
+}
+
+function update(time = 0) {
+
+    const delta = time - lastTime;
+
+    lastTime = time;
+
+    dropCounter += delta;
+
+    if (
+        dropCounter > dropInterval &&
+        !gameOver
+    ) {
+        drop();
+    }
+
+    draw();
+
+    requestAnimationFrame(update);
+}
+
+
+/* PC操作 */
+
+document.addEventListener("keydown", event => {
+
+    if (event.key === "ArrowLeft") move(-1);
+
+    if (event.key === "ArrowRight") move(1);
+
+    if (event.key === "ArrowDown") drop();
+
+    if (event.key === "ArrowUp") rotate();
+
+    if (event.code === "Space") {
+        event.preventDefault();
+        hardDrop();
+    }
+
+});
+
+
+/* スマホ操作 */
+
+function bindButton(id, action) {
+
+    const button = document.getElementById(id);
+
+    button.addEventListener(
+        "pointerdown",
+        event => {
+            event.preventDefault();
+            action();
+        }
+    );
+}
+
+bindButton("left", () => move(-1));
+bindButton("right", () => move(1));
+bindButton("down", drop);
+bindButton("rotate", rotate);
+bindButton("drop", hardDrop);
+
+document
+    .getElementById("restart")
+    .addEventListener("click", restart);
+
+
+/* START */
+
+restart();
+update();
+
+</script>
+
+</body>
+</html>
